@@ -359,11 +359,11 @@
 </div>
 
 <script>
-    // Це зашифрований хеш (SHA-256) від пароля "1234"
+    // Зашифрований хеш (SHA-256) від пароля "1234"
     const CORRECT_HASH = "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4";
 
-    // Перевірка, чи користувач вже вводив правильний пароль у цій сесії браузера
-    if (sessionStorage.getItem('isAuthorized') === 'true') {
+    // ВИКОРИСТОВУЄМО localStorage замість sessionStorage, щоб пароль зберігався назавжди
+    if (localStorage.getItem('isAuthorized') === 'true') {
         document.getElementById('auth-screen').style.display = 'none';
     }
 
@@ -381,7 +381,7 @@
         const errorDiv = document.getElementById('auth-error');
 
         if (inputHash === CORRECT_HASH) {
-            sessionStorage.setItem('isAuthorized', 'true');
+            localStorage.setItem('isAuthorized', 'true');
             document.getElementById('auth-screen').style.display = 'none';
         } else {
             errorDiv.style.display = 'block';
