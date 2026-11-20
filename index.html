@@ -183,6 +183,95 @@
             color: white;
         }
 
+        /* Авто-стрічка днів Пн-Пт */
+        .auto-strip-wrap {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-bottom: 20px;
+        }
+
+        .auto-strip-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .auto-strip-badge {
+            color: var(--accent);
+            background: var(--accent-subtle);
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-weight: 600;
+        }
+
+        .auto-strip-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: border-color 0.2s, color 0.2s;
+        }
+
+        .auto-strip-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .days-strip {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            scroll-behavior: smooth;
+            scrollbar-width: thin;
+            padding-bottom: 2px;
+        }
+
+        .day-pill {
+            flex: 1 0 auto;
+            min-width: 110px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+
+        .day-pill:hover {
+            border-color: var(--accent);
+            color: var(--text-main);
+        }
+
+        .day-pill.active {
+            border-color: var(--accent);
+            background: var(--accent-subtle);
+            color: var(--text-main);
+        }
+
+        .day-pill-tag {
+            font-size: 10px;
+            padding: 1px 5px;
+            border-radius: 4px;
+            background: rgba(59, 130, 246, 0.2);
+            color: #60a5fa;
+        }
+
         .day-card {
             background: var(--surface);
             border: 1px solid var(--border);
@@ -190,6 +279,7 @@
             margin-bottom: 16px;
             overflow: hidden;
             transition: border-color 0.2s;
+            scroll-margin-top: 20px;
         }
 
         .day-card.today {
@@ -355,6 +445,17 @@
         <button class="toggle-btn" id="btn-znam" onclick="setMode('znam')">Знаменник</button>
     </div>
 
+    <div class="auto-strip-wrap">
+        <div class="auto-strip-top">
+            <div>
+                <span>Стрічка Пн–Пт: </span>
+                <span class="auto-strip-badge" id="auto-day-label">Автовизначення...</span>
+            </div>
+            <button type="button" class="auto-strip-btn" id="auto-follow-btn" onclick="toggleAutoFollow()">Автопрокрутка: увімк</button>
+        </div>
+        <div class="days-strip" id="days-strip"></div>
+    </div>
+
     <div id="schedule-container"></div>
 </div>
 
@@ -383,6 +484,7 @@
         if (inputHash === CORRECT_HASH) {
             localStorage.setItem('isAuthorized', 'true');
             document.getElementById('auth-screen').style.display = 'none';
+            syncAutoDayStrip(true);
         } else {
             errorDiv.style.display = 'block';
             document.getElementById('password-input').value = '';
@@ -480,7 +582,88 @@
         }
     ];
 
+    const shortDayNames = { 1: "Пн", 2: "Вт", 3: "Ср", 4: "Чт", 5: "Пт" };
     let currentMode = 'auto';
+    let autoFollowDay = true;
+    let activeStripDayId = null;
+    let lastObservedDayId = null;
+
+    function getAutoWorkdayId(now = new Date()) {
+        const d = now.getDay();
+        if (d >= 1 && d <= 5) return d;
+        return 1; // у вихідні (сб/нд) показує понеділок
+    }
+
+    function renderDaysStrip(now = new Date()) {
+        const todayRealDay = now.getDay();
+        const targetDayId = activeStripDayId || getAutoWorkdayId(now);
+        const stripEl = document.getElementById('days-strip');
+
+        stripEl.innerHTML = scheduleData.map(day => {
+            const isSelected = day.dayId === targetDayId;
+            const isRealToday = day.dayId === todayRealDay;
+            return `<button type="button" class="day-pill ${isSelected ? 'active' : ''}" data-day-id="${day.dayId}" onclick="focusDayFromStrip(${day.dayId})">
+                <span>${shortDayNames[day.dayId]} · ${day.dayName}</span>
+                ${isRealToday ? '<span class="day-pill-tag">Сьогодні</span>' : ''}
+            </button>`;
+        }).join('');
+    }
+
+    function scrollStripToDay(dayId) {
+        const stripEl = document.getElementById('days-strip');
+        const pill = stripEl ? stripEl.querySelector(`.day-pill[data-day-id="${dayId}"]`) : null;
+        if (stripEl && pill) {
+            const targetLeft = pill.offsetLeft - (stripEl.clientWidth - pill.clientWidth) / 2;
+            stripEl.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' });
+        }
+    }
+
+    function scrollPageToDay(dayId) {
+        const card = document.getElementById(`day-card-${dayId}`);
+        if (card) {
+            card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
+
+    function focusDayFromStrip(dayId) {
+        activeStripDayId = dayId;
+        const dayObj = scheduleData.find(d => d.dayId === dayId);
+        document.getElementById('auto-day-label').innerText = dayObj ? `${shortDayNames[dayId]} (${dayObj.dayName})` : shortDayNames[dayId];
+        renderDaysStrip();
+        scrollStripToDay(dayId);
+        scrollPageToDay(dayId);
+    }
+
+    function toggleAutoFollow() {
+        autoFollowDay = !autoFollowDay;
+        const btn = document.getElementById('auto-follow-btn');
+        btn.innerText = autoFollowDay ? 'Автопрокрутка: увімк' : 'Автопрокрутка: вимк';
+        if (autoFollowDay) {
+            activeStripDayId = getAutoWorkdayId();
+            syncAutoDayStrip(true);
+        }
+    }
+
+    function syncAutoDayStrip(forceScroll = false) {
+        const now = new Date();
+        const autoDayId = getAutoWorkdayId(now);
+        if (!activeStripDayId || autoFollowDay) {
+            activeStripDayId = autoDayId;
+        }
+        const dayObj = scheduleData.find(d => d.dayId === activeStripDayId);
+        const isWeekend = now.getDay() === 0 || now.getDay() === 6;
+        const suffix = (autoFollowDay && isWeekend) ? ' (вихідний → Пн)' : '';
+        document.getElementById('auto-day-label').innerText = `${shortDayNames[activeStripDayId]} · ${dayObj ? dayObj.dayName : ''}${suffix}`;
+        renderDaysStrip(now);
+
+        if (forceScroll || (autoFollowDay && lastObservedDayId !== autoDayId)) {
+            scrollStripToDay(activeStripDayId);
+            if (autoFollowDay && localStorage.getItem('isAuthorized') === 'true') {
+                scrollPageToDay(activeStripDayId);
+            }
+        }
+        lastObservedDayId = autoDayId;
+    }
 
     function setMode(mode) {
         currentMode = mode;
@@ -501,7 +684,7 @@
         let html = '';
         scheduleData.forEach(day => {
             const isToday = (day.dayId === todayDay);
-            html += `<div class="day-card ${isToday ? 'today' : ''}">
+            html += `<div id="day-card-${day.dayId}" class="day-card ${isToday ? 'today' : ''}">
                 <div class="day-header">
                     <span>${day.dayName}</span>
                     ${isToday ? '<span class="today-badge">Сьогодні</span>' : ''}
@@ -570,6 +753,7 @@
         document.getElementById('schedule-container').innerHTML = html;
         const weekText = isChisAuto ? "Тиждень: Чисельник (ч)" : "Тиждень: Знаменник (зн)";
         document.getElementById('current-week').innerText = weekText;
+        syncAutoDayStrip(false);
     }
 
     function updateClock() {
@@ -578,11 +762,15 @@
         const m = String(now.getMinutes()).padStart(2, '0');
         const s = String(now.getSeconds()).padStart(2, '0');
         document.getElementById('clock').innerText = `${h}:${m}:${s}`;
+        syncAutoDayStrip(false);
     }
 
     setInterval(updateClock, 1000);
     updateClock();
     renderSchedule();
+    if (localStorage.getItem('isAuthorized') === 'true') {
+        setTimeout(() => scrollStripToDay(getAutoWorkdayId()), 100);
+    }
 </script>
 
 </body>
